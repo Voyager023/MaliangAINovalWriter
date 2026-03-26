@@ -1,0 +1,87 @@
+name: Build open deploy dist
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-open-dist:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Prepare deploy dist directory
+        run: mkdir -p deploy/dist
+
+      - name: Build backend jar
+        working-directory: AINovalServer
+        env:
+          MAVEN_OPTS: >-
+            --add-opens=java.base/java.math=ALL-UNNAMED
+            --add-opens=java.base/java.lang=ALL-UNNAMED
+            --add-opens=java.base/java.time=ALL-UNNAMED
+            --add-opens=java.base/java.util=ALL-UNNAMED
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+        run: |
+          mvn -B -DskipTests=true package
+          JAR_PATH="$(find target -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+          if [[ -z "$JAR_PATH" ]]; then
+            echo 'No packaged jar found in AINovalServer/target'
+            exit 1
+          fi
+          cp "$JAR_PATH" ../deploy/dist/ainoval-server.jar
+
+      - name: Build Flutter web artifacts
+        working-directory: AINoval
+        run: |
+          flutter config --enable-web
+          flutter pub get
+
+          if command -v dart >/dev/null 2>&1; then
+            dart run build_runner build --delete-conflicting-outputs || echo 'build_runner failed, continuing with checked-in/generated sources'
+          else
+            flutter packages pub run build_runner build --delete-conflicting-outputs || echo 'build_runner failed, continuing with checked-in/generated sources'
+          fi
+
+          RENDERER_ARGS=()
+          if flutter build web -h | grep -q -- '--web-renderer'; then
+            RENDERER_ARGS=(--web-renderer html)
+          fi
+
+          PWA_ARGS=()
+          if flutter build web -h | grep -q -- '--pwa-strategy'; then
+            PWA_ARGS=(--pwa-strategy none)
+          fi
+
+          flutter build web --release "${RENDERER_ARGS[@]}" --base-href / "${PWA_ARGS[@]}" --tree-shake-icons --dart-define=LOG_LEVEL=WARN
+          rm -rf ../deploy/dist/web
+          cp -R build/web ../deploy/dist/web
+
+          flutter build web --release "${RENDERER_ARGS[@]}" --base-href / "${PWA_ARGS[@]}" --tree-shake-icons -t lib/admin_main.dart
+          rm -rf ../deploy/dist/admin_web
+          cp -R build/web ../deploy/dist/admin_web
+
+      - name: Upload deploy dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ainoval-open-dist
+          path: deploy/dist
+          retention-days: 7
+          if-no-files-found: error
