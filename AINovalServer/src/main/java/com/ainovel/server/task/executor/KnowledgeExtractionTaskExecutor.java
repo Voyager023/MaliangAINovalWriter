@@ -746,23 +746,24 @@ public class KnowledgeExtractionTaskExecutor implements BackgroundTaskExecutable
         final long finalTotalTokens = totalTokens;
         
         // 如果有章节大纲，先创建Novel
-        Mono<String> novelCreationMono;
+        Mono<Optional<String>> novelCreationMono;
         if (!chapterOutlineSettings.isEmpty()) {
             log.info("检测到章节大纲，开始创建大纲小说: {} 个章节", chapterOutlineSettings.size());
-            // ✅ 传递章节详细信息（包含完整内容）
             @SuppressWarnings("unchecked")
-            List<Map<String, Object>> chapterDetails = 
+            List<Map<String, Object>> chapterDetails =
                     (List<Map<String, Object>>) contentData.get("chapterDetails");
-            novelCreationMono = createOutlineNovel(contentData, chapterOutlineSettings, chapterDetails, parameters);
+            novelCreationMono = createOutlineNovel(contentData, chapterOutlineSettings, chapterDetails, parameters)
+                    .map(Optional::of)
+                    .switchIfEmpty(Mono.just(Optional.empty()));
         } else {
             log.info("未检测到章节大纲，跳过小说创建");
-            // ✅ 使用明确类型的 Mono.empty().defaultIfEmpty(null) 安全处理 null
-            novelCreationMono = Mono.<String>empty().defaultIfEmpty(null);
+            novelCreationMono = Mono.just(Optional.empty());
         }
-        
+
         // 创建知识库并关联Novel
         return novelCreationMono
-                .flatMap(outlineNovelId -> {
+                .flatMap(optionalOutlineNovelId -> {
+                    String outlineNovelId = optionalOutlineNovelId.orElse(null);
                     log.info("开始创建知识库, outlineNovelId={}", outlineNovelId);
                     return buildKnowledgeBase(contentData, allSettings, parameters, outlineNovelId);
                 })
@@ -948,7 +949,7 @@ public class KnowledgeExtractionTaskExecutor implements BackgroundTaskExecutable
                 })
                 .onErrorResume(error -> {
                     log.error("❌ 大纲小说创建失败: error={}", error.getMessage(), error);
-                    return Mono.just(null); // 失败时返回null，不阻断整个流程
+                    return Mono.empty(); // 失败时跳过大纲小说，不阻断整个流程
                 });
     }
     

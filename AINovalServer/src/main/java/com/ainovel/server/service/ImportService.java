@@ -90,7 +90,16 @@ public interface ImportService {
      * @return 完整的小说文本内容（包含标题和所有章节）
      */
     Mono<String> getFullContentFromPreviewSession(String previewSessionId, Integer chapterLimit);
-    
+
+    /**
+     * 从预览会话获取原始TXT内容
+     * 用于知识库拆书的原始文本模式
+     *
+     * @param previewSessionId 预览会话ID
+     * @return 原始TXT文本内容
+     */
+    Mono<String> getRawTextFromPreviewSession(String previewSessionId);
+
     /**
      * 从预览会话获取总章节数
      *

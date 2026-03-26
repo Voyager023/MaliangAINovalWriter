@@ -127,20 +127,21 @@ class KnowledgeBaseRepositoryImpl implements KnowledgeBaseRepository {
     required String modelConfigId,
     required String modelType,
     int? chapterLimit,
+    bool useRawText = false,
   }) async {
     try {
-      AppLogger.i('KnowledgeBaseRepository', '从预览会话提取知识库: previewSessionId=$previewSessionId, title=$title, chapterLimit=$chapterLimit');
-      
-      final data = {
+      AppLogger.i('KnowledgeBaseRepository', '从预览会话提取知识库: previewSessionId=$previewSessionId, title=$title, chapterLimit=$chapterLimit, useRawText=$useRawText');
+
+      final Map<String, dynamic> data = {
         'previewSessionId': previewSessionId,
         'title': title,
         'description': description,
         'extractionTypes': extractionTypes,
         'modelConfigId': modelConfigId,
         'modelType': modelType,
+        'useRawText': useRawText,
       };
-      
-      // 只有在有章节限制时才添加该字段
+
       if (chapterLimit != null) {
         data['chapterLimit'] = chapterLimit;
       }

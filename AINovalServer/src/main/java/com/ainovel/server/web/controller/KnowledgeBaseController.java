@@ -218,51 +218,81 @@ public class KnowledgeBaseController {
     public Mono<KnowledgeExtractionTaskResponse> extractFromPreviewSession(
             @Valid @RequestBody PreviewSessionExtractionRequest request,
             Authentication authentication) {
-        
+
         User user = (User) authentication.getPrincipal();
         String userId = user.getId();
-        log.info("从预览会话提取知识库: sessionId={}, title={}, chapterLimit={}, userId={}", 
-                request.getPreviewSessionId(), request.getTitle(), request.getChapterLimit(), userId);
-        
-        // ✅ 先获取章节数量
-        return importService.getTotalChapterCountFromPreviewSession(request.getPreviewSessionId())
-                .flatMap(chapterCount -> 
-                    // 然后获取完整文本内容（支持章节限制）
-                    importService.getFullContentFromPreviewSession(request.getPreviewSessionId(), request.getChapterLimit())
-                        .map(content -> new Object[]{content, chapterCount})
-                )
-                .flatMap(data -> {
-                    String content = (String) data[0];
-                    Integer totalChapterCount = (Integer) data[1];
-                    
-                    // 创建文本提取请求
-                    TextKnowledgeExtractionRequest extractionRequest = TextKnowledgeExtractionRequest.builder()
-                            .title(request.getTitle())
-                            .content(content)
-                            .description(request.getDescription())
-                            .extractionTypes(request.getExtractionTypes())
-                            .modelConfigId(request.getModelConfigId())
-                            .modelType(request.getModelType())
-                            .chapterCount(request.getChapterLimit() != null ? request.getChapterLimit() : totalChapterCount)  // ✅ 使用用户选择的章节限制
-                            .previewSessionId(request.getPreviewSessionId())  // ✅ 传递previewSessionId
-                            .build();
-                    
-                    log.info("从预览会话提取知识库: 文本长度={}, 用户选择章节数={}, 总章节数={}", 
-                            content.length(), request.getChapterLimit(), totalChapterCount);
-                    
-                    // 调用提取服务
-                    return extractionService.extractFromUserText(extractionRequest, userId);
-                })
-                // ⚠️ 不在这里清理预览会话！
-                // 后台任务还需要使用previewSession获取章节详情
-                // 清理操作会在TaskExecutor中获取完数据后执行
+        boolean useRawText = Boolean.TRUE.equals(request.getUseRawText());
+        log.info("从预览会话提取知识库: sessionId={}, title={}, chapterLimit={}, useRawText={}, userId={}",
+                request.getPreviewSessionId(), request.getTitle(), request.getChapterLimit(), useRawText, userId);
+
+        Mono<KnowledgeExtractionTaskResponse> extractionMono;
+        if (useRawText) {
+            if (request.getExtractionTypes() != null && request.getExtractionTypes().contains("CHAPTER_OUTLINE")) {
+                return Mono.error(new KnowledgeExtractionException("原始TXT模式不支持章节大纲提取", "INVALID_EXTRACTION_TYPES"));
+            }
+
+            if (request.getChapterLimit() != null) {
+                log.info("原始TXT模式忽略章节限制: sessionId={}, chapterLimit={}", request.getPreviewSessionId(), request.getChapterLimit());
+            }
+
+            extractionMono = importService.getRawTextFromPreviewSession(request.getPreviewSessionId())
+                    .flatMap(content -> {
+                        TextKnowledgeExtractionRequest extractionRequest = TextKnowledgeExtractionRequest.builder()
+                                .title(request.getTitle())
+                                .content(content)
+                                .description(request.getDescription())
+                                .extractionTypes(request.getExtractionTypes())
+                                .modelConfigId(request.getModelConfigId())
+                                .modelType(request.getModelType())
+                                .build();
+
+                        log.info("原始TXT模式提交知识提取: sessionId={}, 文本长度={}", request.getPreviewSessionId(), content.length());
+
+                        return extractionService.extractFromUserText(extractionRequest, userId)
+                                .flatMap(response -> importService.cleanupPreviewSession(request.getPreviewSessionId())
+                                        .doOnSuccess(v -> log.info("原始TXT模式任务创建后已清理预览会话: sessionId={}", request.getPreviewSessionId()))
+                                        .onErrorResume(error -> {
+                                            log.warn("原始TXT模式清理预览会话失败: sessionId={}, error={}", request.getPreviewSessionId(), error.getMessage());
+                                            return Mono.empty();
+                                        })
+                                        .thenReturn(response));
+                    });
+        } else {
+            extractionMono = importService.getTotalChapterCountFromPreviewSession(request.getPreviewSessionId())
+                    .flatMap(chapterCount ->
+                        importService.getFullContentFromPreviewSession(request.getPreviewSessionId(), request.getChapterLimit())
+                                .map(content -> new Object[]{content, chapterCount})
+                    )
+                    .flatMap(data -> {
+                        String content = (String) data[0];
+                        Integer totalChapterCount = (Integer) data[1];
+
+                        TextKnowledgeExtractionRequest extractionRequest = TextKnowledgeExtractionRequest.builder()
+                                .title(request.getTitle())
+                                .content(content)
+                                .description(request.getDescription())
+                                .extractionTypes(request.getExtractionTypes())
+                                .modelConfigId(request.getModelConfigId())
+                                .modelType(request.getModelType())
+                                .chapterCount(request.getChapterLimit() != null ? request.getChapterLimit() : totalChapterCount)
+                                .previewSessionId(request.getPreviewSessionId())
+                                .build();
+
+                        log.info("从预览会话提取知识库: 文本长度={}, 用户选择章节数={}, 总章节数={}",
+                                content.length(), request.getChapterLimit(), totalChapterCount);
+
+                        return extractionService.extractFromUserText(extractionRequest, userId);
+                    });
+        }
+
+        return extractionMono
                 .onErrorMap(e -> {
                     if (e instanceof KnowledgeExtractionException) {
                         return e;
                     }
-                    log.error("从预览会话提取知识库失败: sessionId={}, userId={}, error={}", 
+                    log.error("从预览会话提取知识库失败: sessionId={}, userId={}, error={}",
                             request.getPreviewSessionId(), userId, e.getMessage(), e);
-                    return new KnowledgeExtractionException("知识提取失败: " + e.getMessage(), 
+                    return new KnowledgeExtractionException("知识提取失败: " + e.getMessage(),
                             "EXTRACTION_FAILED", e);
                 });
     }

@@ -996,46 +996,46 @@ public class ImportServiceImpl implements ImportService {
     public Mono<String> getFullContentFromPreviewSession(String previewSessionId, Integer chapterLimit) {
         return Mono.fromCallable(() -> {
             log.info("从预览会话获取完整内容: sessionId={}, chapterLimit={}", previewSessionId, chapterLimit);
-            
+
             ImportSessionInfo sessionInfo = previewSessions.get(previewSessionId);
             if (sessionInfo == null || sessionInfo.getCleaned()) {
                 throw new RuntimeException("预览会话不存在或已过期");
             }
-            
+
             // 先尝试从缓存获取
             ParsedNovelData parsedData = parsedDataCache.get(previewSessionId);
-            
+
             if (parsedData == null) {
                 // 如果缓存中没有，重新解析文件
                 Path tempFilePath = Paths.get(sessionInfo.getTempFilePath());
                 if (!Files.exists(tempFilePath)) {
                     throw new RuntimeException("临时文件不存在");
                 }
-                
+
                 NovelParser parser = getParserForFile(sessionInfo.getOriginalFileName());
                 List<String> fileLines = readFileLinesWithAutoCharset(tempFilePath);
                 fileLines = preprocessLines(fileLines);
-                
+
                 parsedData = parser.parseStream(fileLines.stream());
-                
+
                 // 设置标题
                 String title = extractTitleFromFilename(sessionInfo.getOriginalFileName());
                 parsedData.setNovelTitle(title);
-                
+
                 // 缓存起来
                 parsedDataCache.put(previewSessionId, parsedData);
             }
-            
+
             // 拼接章节内容
             StringBuilder fullContent = new StringBuilder();
             List<ParsedSceneData> scenes = parsedData.getScenes();
-            
+
             // 确定实际使用的章节数
             int totalChapters = scenes.size();
-            int effectiveChapters = (chapterLimit != null && chapterLimit > 0) 
-                    ? Math.min(chapterLimit, totalChapters) 
+            int effectiveChapters = (chapterLimit != null && chapterLimit > 0)
+                    ? Math.min(chapterLimit, totalChapters)
                     : totalChapters;
-            
+
             for (int i = 0; i < effectiveChapters; i++) {
                 ParsedSceneData scene = scenes.get(i);
                 if (i > 0) {
@@ -1044,11 +1044,33 @@ public class ImportServiceImpl implements ImportService {
                 fullContent.append("【第").append(i + 1).append("章 ").append(scene.getSceneTitle()).append("】\n");
                 fullContent.append(scene.getSceneContent());
             }
-            
+
             String content = fullContent.toString();
-            log.info("获取完整内容成功: sessionId={}, 总章节数={}, 使用章节数={}, 总字数={}", 
+            log.info("获取完整内容成功: sessionId={}, 总章节数={}, 使用章节数={}, 总字数={}",
                     previewSessionId, totalChapters, effectiveChapters, content.length());
-            
+
+            return content;
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public Mono<String> getRawTextFromPreviewSession(String previewSessionId) {
+        return Mono.fromCallable(() -> {
+            log.info("从预览会话获取原始TXT内容: sessionId={}", previewSessionId);
+
+            ImportSessionInfo sessionInfo = previewSessions.get(previewSessionId);
+            if (sessionInfo == null || sessionInfo.getCleaned()) {
+                throw new RuntimeException("预览会话不存在或已过期");
+            }
+
+            Path tempFilePath = Paths.get(sessionInfo.getTempFilePath());
+            if (!Files.exists(tempFilePath)) {
+                throw new RuntimeException("临时文件不存在");
+            }
+
+            List<String> fileLines = readFileLinesWithAutoCharset(tempFilePath);
+            String content = String.join("\n", fileLines);
+            log.info("获取原始TXT内容成功: sessionId={}, 总字数={}", previewSessionId, content.length());
             return content;
         }).subscribeOn(Schedulers.boundedElastic());
     }

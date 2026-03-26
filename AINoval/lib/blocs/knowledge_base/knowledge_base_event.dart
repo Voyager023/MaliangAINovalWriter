@@ -85,6 +85,7 @@ class ExtractFromPreviewSession extends KnowledgeBaseEvent {
   final String modelConfigId;
   final String modelType;
   final int? chapterLimit; // null表示整本，否则为前N章
+  final bool useRawText;
 
   const ExtractFromPreviewSession({
     required this.previewSessionId,
@@ -94,10 +95,11 @@ class ExtractFromPreviewSession extends KnowledgeBaseEvent {
     required this.modelConfigId,
     required this.modelType,
     this.chapterLimit,
+    this.useRawText = false,
   });
 
   @override
-  List<Object?> get props => [previewSessionId, title, description, extractionTypes, modelConfigId, modelType, chapterLimit];
+  List<Object?> get props => [previewSessionId, title, description, extractionTypes, modelConfigId, modelType, chapterLimit, useRawText];
 }
 
 /// 获取拆书任务状态

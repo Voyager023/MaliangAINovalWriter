@@ -39,6 +39,7 @@ abstract class KnowledgeBaseRepository {
     required String modelConfigId,
     required String modelType,
     int? chapterLimit, // null表示整本，否则为前N章
+    bool useRawText = false,
   });
   
   /// 获取拆书任务状态

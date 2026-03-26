@@ -119,6 +119,7 @@ class _KnowledgeExtractionImportDialogState
 
   // 章节限制选择
   int? _chapterLimit; // null表示整本，否则为章节数量
+  bool _useRawText = false;
 
   @override
   void initState() {
@@ -471,6 +472,47 @@ class _KnowledgeExtractionImportDialogState
 
           const SizedBox(height: 16),
 
+          _buildFormField(
+            label: 'TXT处理方式（临时）',
+            required: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  value: _useRawText,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    '提取时直接使用原始TXT',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: const Text(
+                    '开启后，预览章节仅供查看，真正提交给AI的是原始TXT，不再按章节重组。',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _useRawText = value;
+                      if (value) {
+                        _chapterLimit = null;
+                        _extractionTypes['CHAPTER_OUTLINE'] = false;
+                      }
+                    });
+                  },
+                ),
+                if (_useRawText)
+                  Text(
+                    '原始TXT模式下不支持“章节大纲”，也不会按前10章/前20章裁剪内容。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? WebTheme.darkGrey600 : WebTheme.grey600,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           // 提取类型选择
           _buildFormField(
             label: '选择提取类型',
@@ -570,7 +612,45 @@ class _KnowledgeExtractionImportDialogState
   Widget _buildChapterLimitSelector(NovelImportPreviewReady state, bool isDark) {
     final totalChapters = state.previewResponse.totalChapterCount;
     final totalWords = state.previewResponse.totalWordCount;
-    
+
+    if (_useRawText) {
+      final bool exceedsLimit = totalWords > 30000;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isDark ? WebTheme.darkGrey200 : WebTheme.grey100,
+              border: Border.all(
+                color: isDark ? WebTheme.darkGrey300 : WebTheme.grey300,
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: isDark ? WebTheme.darkGrey700 : WebTheme.grey700,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '当前为原始TXT模式：将直接发送整份文本，约${(totalWords / 10000).toStringAsFixed(1)}万字${exceedsLimit ? '（建议控制在3万字以内以获得更稳定结果）' : ''}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? WebTheme.darkGrey700 : WebTheme.grey700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     // 计算实际使用的章节数和字数
     final int effectiveChapters = _chapterLimit ?? totalChapters;
     final double ratio = effectiveChapters / totalChapters;
@@ -717,15 +797,18 @@ class _KnowledgeExtractionImportDialogState
                 spacing: 8,
                 runSpacing: 8,
                 children: entry.value.map((type) {
+                  final bool isDisabled = _useRawText && type == 'CHAPTER_OUTLINE';
                   return FilterChip(
                     label: Text(_extractionTypeNames[type]!,
                         style: const TextStyle(fontSize: 12)),
                     selected: _extractionTypes[type]!,
-                    onSelected: (selected) {
-                      setState(() {
-                        _extractionTypes[type] = selected;
-                      });
-                    },
+                    onSelected: isDisabled
+                        ? null
+                        : (selected) {
+                            setState(() {
+                              _extractionTypes[type] = selected;
+                            });
+                          },
                     selectedColor:
                         (isDark ? WebTheme.darkGrey800 : WebTheme.grey800)
                             .withOpacity(0.2),
@@ -908,7 +991,7 @@ class _KnowledgeExtractionImportDialogState
 
           // 章节限制选择
           _buildFormField(
-            label: '拆书范围',
+            label: _useRawText ? '拆书范围（原始TXT模式）' : '拆书范围',
             required: true,
             child: _buildChapterLimitSelector(state, isDark),
           ),
@@ -1013,7 +1096,9 @@ class _KnowledgeExtractionImportDialogState
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '拆书过程将分析所有章节内容，预计需要几分钟时间',
+                    _useRawText
+                        ? '原始TXT模式下，预览章节仅供查看，实际拆书会直接分析原始文本。'
+                        : '拆书过程将分析所有章节内容，预计需要几分钟时间',
                     style: const TextStyle(fontSize: 11),
                   ),
                 ),
@@ -1184,9 +1269,9 @@ class _KnowledgeExtractionImportDialogState
       
       final totalChapters = importState.previewResponse.totalChapterCount;
       final totalWords = importState.previewResponse.totalWordCount;
-      final effectiveChapters = _chapterLimit ?? totalChapters;
-      final ratio = effectiveChapters / totalChapters;
-      final estimatedWords = (totalWords * ratio).round();
+      final estimatedWords = _useRawText
+          ? totalWords
+          : (totalWords * ((_chapterLimit ?? totalChapters) / totalChapters)).round();
       
       // ✅ 输入token = 字数（不做倍率换算）
       return estimatedWords > 10000 
@@ -1238,9 +1323,9 @@ class _KnowledgeExtractionImportDialogState
       // 计算预估token（输入token = 拆书范围的总字数）
       final totalChapters = state.previewResponse.totalChapterCount;
       final totalWords = state.previewResponse.totalWordCount;
-      final effectiveChapters = _chapterLimit ?? totalChapters;
-      final ratio = effectiveChapters / totalChapters;
-      final estimatedWords = (totalWords * ratio).round();
+      final estimatedWords = _useRawText
+          ? totalWords
+          : (totalWords * ((_chapterLimit ?? totalChapters) / totalChapters)).round();
       
       // ✅ 输入token = 字数（不做倍率换算）
       final estimatedInputTokens = estimatedWords;
@@ -1300,7 +1385,8 @@ class _KnowledgeExtractionImportDialogState
             extractionTypes: allTypes,
             modelConfigId: _selectedModel!.id,
             modelType: _selectedModel!.isPublic ? 'public' : 'user',
-            chapterLimit: _chapterLimit, // 传递章节限制
+            chapterLimit: _useRawText ? null : _chapterLimit,
+            useRawText: _useRawText,
           ),
         );
 

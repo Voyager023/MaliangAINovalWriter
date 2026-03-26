@@ -164,8 +164,8 @@ class KnowledgeBaseBloc extends Bloc<KnowledgeBaseEvent, KnowledgeBaseState> {
     try {
       emit(const KnowledgeBaseLoading());
       
-      AppLogger.i('KnowledgeBaseBloc', '从预览会话提取知识库: ${event.previewSessionId}, title=${event.title}, chapterLimit=${event.chapterLimit}');
-      
+      AppLogger.i('KnowledgeBaseBloc', '从预览会话提取知识库: ${event.previewSessionId}, title=${event.title}, chapterLimit=${event.chapterLimit}, useRawText=${event.useRawText}');
+
       final taskResponse = await _repository.extractFromPreviewSession(
         previewSessionId: event.previewSessionId,
         title: event.title,
@@ -174,6 +174,7 @@ class KnowledgeBaseBloc extends Bloc<KnowledgeBaseEvent, KnowledgeBaseState> {
         modelConfigId: event.modelConfigId,
         modelType: event.modelType,
         chapterLimit: event.chapterLimit,
+        useRawText: event.useRawText,
       );
       
       emit(ExtractionTaskCreated(taskResponse));

@@ -796,14 +796,14 @@ public class UniversalAIServiceImpl implements UniversalAIService {
      */
     private Mono<String> extractPromptTemplateId(UniversalAIRequestDto request) {
         AIFeatureType featureType = mapRequestTypeToFeatureType(request.getRequestType());
-        
+
         // 1. 🚀 优先级1：检查请求参数中是否指定了promptTemplateId
         String explicitTemplateId = extractExplicitTemplateId(request);
         if (explicitTemplateId != null && !explicitTemplateId.isEmpty()) {
             log.info("🎯 使用明确指定的提示词模板ID: {}", explicitTemplateId);
             return validateAndReturnTemplateId(explicitTemplateId, request.getUserId());
         }
-        
+
         // 2. 🚀 优先级2：查找用户该功能类型的默认模板
         log.info("🔍 未指定模板ID，查找用户默认模板 - userId: {}, featureType: {}", request.getUserId(), featureType);
         return enhancedUserPromptService.getDefaultTemplate(request.getUserId(), featureType)
@@ -811,10 +811,8 @@ public class UniversalAIServiceImpl implements UniversalAIService {
                     log.info("✅ 找到用户默认模板: {}", defaultTemplate.getId());
                     return defaultTemplate.getId();
                 })
-                .switchIfEmpty(Mono.fromCallable(() -> {
-                    // 3. 🚀 优先级3：使用系统默认模板（返回null让Provider使用内置默认）
+                .switchIfEmpty(Mono.fromSupplier(() -> {
                     log.info("⚠️ 未找到用户默认模板，获取系统默认模板ID");
-                    // 尝试获取系统默认模板ID，如果获取不到则返回null使用Provider内置默认
                     AIFeaturePromptProvider provider = promptProviderFactory.getProvider(featureType);
                     if (provider != null) {
                         String systemTemplateId = provider.getSystemTemplateId();
@@ -824,11 +822,11 @@ public class UniversalAIServiceImpl implements UniversalAIService {
                         }
                     }
                     log.info("⚠️ 系统默认模板ID为空，使用Provider内置默认");
-                    return null; // null表示使用Provider的默认模板
+                    return "";
                 }))
                 .onErrorResume(error -> {
                     log.warn("查找用户默认模板时出错: {}, 回退到系统默认", error.getMessage());
-                    return Mono.just(null); // 出错时也回退到系统默认
+                    return Mono.just("");
                 });
     }
 
@@ -871,7 +869,7 @@ public class UniversalAIServiceImpl implements UniversalAIService {
      */
     private Mono<String> validateAndReturnTemplateId(String templateId, String userId) {
         if (templateId == null || templateId.isEmpty()) {
-            return Mono.just(null);
+            return Mono.just("");
         }
         
         // 🚀 处理系统默认模板ID（格式：system_default_XXX）
@@ -895,8 +893,8 @@ public class UniversalAIServiceImpl implements UniversalAIService {
                 })
                 .onErrorResume(error -> {
                     log.warn("模板ID验证失败: templateId={}, userId={}, error={}", templateId, userId, error.getMessage());
-                    // 验证失败时返回null，回退到默认逻辑
-                    return Mono.just(null);
+                    // 验证失败时返回空字符串，回退到默认逻辑
+                    return Mono.just("");
                 });
     }
 

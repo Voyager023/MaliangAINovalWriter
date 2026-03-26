@@ -57,6 +57,11 @@ public class PreviewSessionExtractionRequest {
      * 章节限制（null表示整本，否则为前N章）
      */
     private Integer chapterLimit;
+
+    /**
+     * 是否直接使用原始TXT内容进行提取
+     */
+    private Boolean useRawText;
 }
 
 
