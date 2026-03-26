@@ -74,7 +74,7 @@ jobs:
           rm -rf ../deploy/dist/web
           cp -R build/web ../deploy/dist/web
 
-          flutter build web --release "${RENDERER_ARGS[@]}" --base-href / "${PWA_ARGS[@]}" --tree-shake-icons -t lib/admin_main.dart
+          flutter build web --release "${RENDERER_ARGS[@]}" --base-href /admin/ "${PWA_ARGS[@]}" --tree-shake-icons -t lib/admin_main.dart
           rm -rf ../deploy/dist/admin_web
           cp -R build/web ../deploy/dist/admin_web
 
